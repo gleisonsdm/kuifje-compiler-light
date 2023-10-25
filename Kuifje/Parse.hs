@@ -55,8 +55,6 @@ languageDef =
                                       , "uniform"
                                       , "geometric"
                                       , "|"
-                                      , "function"
-                                      , "return"
                                       , "csv"
                                       , "for"
                                       ]
@@ -154,12 +152,9 @@ sOperators =
 
 sTerm :: Parser Stmt
 sTerm = (braces statements
-         <|> funcStmt
-         <|> returnStmt
          <|> try plusplusStmt
          <|> try lesslessStmt
          <|> try samplingStmt
-         <|> try supportStmt
          <|> try readStmt
          <|> try listCallStmt
          <|> try assignStmt
@@ -275,25 +270,6 @@ getNextStmt =
      semi
      return $ stmt
 
-funcStmt :: Parser Stmt
-funcStmt = 
-  do ref <- indentationBlock
-     reserved "def"
-     name <- identifier
-     inputs <- parens (sepBy identifier (symbol ","))
-     reservedOp ":"
-     body <- codeBlock ref
-     -- Output Parameters - Only in the end of the function:
-     input <- getInput
-     setInput (";" ++ input)
-     return $ FuncStmt name body inputs
-
-returnStmt :: Parser Stmt
-returnStmt =
-  do reserved "return"
-     outputs <- expression
-     return $ ReturnStmt outputs
-     
 whileStmt :: Parser Stmt
 whileStmt =
   do ref <- indentationBlock
@@ -343,14 +319,6 @@ samplingStmt =
      reservedOp "<-"
      expr <- expression
      return $ Sampling var expr
-
-supportStmt :: Parser Stmt
-supportStmt =
-  do var <- identifier
-     reservedOp "="
-     reserved "set"
-     expr <- expression
-     return $ Support var expr
 
 skipStmt :: Parser Stmt
 skipStmt = reserved "skip" >> return Skip
@@ -448,7 +416,6 @@ eTermR = (parens expression
         <|> try listRemove
         <|> try listLength
         <|> try listRange
-        <|> try callExpr
         <|> try uniformFromSet
         <|> try uniformIchoices
         <|> try uniformSetVar
@@ -599,13 +566,6 @@ listRange =
            r <- integer
            symbol ")"
            return $ ListExpr [(RationalConst (x % 1)) | x <- [l..r]]
-
-callExpr =
-        do name <- identifier
-           reservedOp "("
-           parameters <- sepBy expression (symbol ",")
-           reservedOp ")" 
-           return $ CallExpr name parameters
 
 -- Output only
 parseString :: String -> Stmt

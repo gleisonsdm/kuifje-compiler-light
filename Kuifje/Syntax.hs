@@ -59,7 +59,6 @@ data Expr = Var String
           | TupleExpr [Expr] 
           | ExprIf Expr Expr Expr
           | Eset (Set Expr)
-          | CallExpr String [Expr]
           | ListExpr [Expr]
           | ListElem String Expr
           | ListAppend String Expr
@@ -91,9 +90,6 @@ data Stmt = Seq [Stmt]
           | If Expr Stmt Stmt
           | While Expr Stmt
           | For String Expr Stmt
-          | FuncStmt String Stmt [String] --[Expr]
-          | ReturnStmt Expr
-          | Support String Expr
           | Csv String Expr Expr Expr Expr
           | Skip 
           | Leak Expr

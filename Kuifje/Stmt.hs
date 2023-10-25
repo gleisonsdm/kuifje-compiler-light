@@ -38,32 +38,6 @@ valuesToExprList ls =
             tl = valuesToExprList (tail ls)
          in exp : tl
 
-getSupportList :: [(Dist Value)] -> [Expr]
-getSupportList [] = []
-getSupportList ls = 
-        let hd = assocs (unpackD (head ls))
-            newHd = valuesToExprList hd 
-            tl = getSupportList (tail ls)
-         in newHd ++ tl
-
-getSupportDist :: [((Dist Value), Rational)] -> [(Expr, Rational)]
-getSupportDist [] = []
-getSupportDist ls =
-        let hd = head ls
-            exp = valuesToExprList (assocs (unpackD (fst hd)))
-            newExp = (Eset (DSET.fromList exp))
-            prob = snd hd
-            tl = getSupportDist (tail ls)
-         --in (newExp, prob) : tl
-         in if length exp == 1
-            then ((head exp), prob) : tl
-            else (newExp, prob) : tl
-
-getSupportFromHyper :: Dist (Dist Value) -> [(Expr, Rational)]
-getSupportFromHyper d =
-        let mp = unpackD d
-         in getSupportDist (assocs mp)
-
 recoverSupportAsDistList :: [(Expr, Rational)] -> [Expr]
 recoverSupportAsDistList [] = []
 recoverSupportAsDistList ls = 
@@ -223,24 +197,6 @@ isSetNEmpty :: Expr -> Bool
 isSetNEmpty (Eset e) = ((DSET.size e) > 0)
 isSetNEmpty _ = False
 
-isReturnStmt :: Stmt -> Bool
-isReturnStmt (ReturnStmt _) = True
-isReturnStmt _ = False
-
-getReturnExpr :: Stmt -> Expr
-getReturnExpr (ReturnStmt expr) = expr
-getReturnExpr e = error ("Invalid Return Expression " ++ (show e))
-
-findReturns :: [Stmt] -> [Expr]
--- Skip if no returns were found
-findReturns [] = []
-findReturns fBody = 
-           let hd = (head fBody)
-               tl = findReturns (tail fBody) 
-           in if (isReturnStmt hd)
-              then [(getReturnExpr hd)] ++ tl
-              else tl
-
 addInputCntx :: String -> [String] -> [Expr] -> Stmt -> Stmt
 addInputCntx fName [] [] stmt = stmt
 addInputCntx fName [] _  stmt = error ("Invalid Call to " ++ fName)
@@ -277,7 +233,6 @@ updateVarToCntx fName (Var id) = (Var (fName ++ "." ++ id))
 updateID :: String -> Stmt -> Stmt
 updateID fName (Assign id expr) = (Assign (fName ++ "." ++ id) expr)
 updateID fName (Sampling id expr) = (Sampling (fName ++ "." ++ id) expr)
-updateID fName (Support id expr) = (Support (fName ++ "." ++ id) expr)
 updateID fName (For id expr body) = (For (fName ++ "." ++ id) expr body)
 updateID fName e = e
 
@@ -370,9 +325,6 @@ updateStmtUses fName (Echoice s1 s2 p) =
 updateStmtUses fName (Sampling id expr) =
      let newexpr = (updateExpression fName expr)
      in (updateID fName (Sampling id newexpr))
-updateStmtUses fName (Support id expr) =       
-     let newexpr = (updateExpression fName expr)
-     in (updateID fName (Support id newexpr))
 updateStmtUses fName (For var (Var idSet) body) =
      let newBody = (updateStmtUses fName body)
          newIdSet = (updateExpression fName (Var idSet))

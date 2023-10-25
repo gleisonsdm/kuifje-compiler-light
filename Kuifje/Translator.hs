@@ -31,6 +31,9 @@ import System.IO
 import Text.ParserCombinators.Parsec
 import Text.ParserCombinators.Parsec.Expr
 
+fst2 :: (a, b) -> a
+fst2 (x, _) = x
+
 fst3 :: (a, b, c) -> a
 fst3 (x, _, _) = x
 
@@ -60,89 +63,45 @@ recoverListID :: Expr -> Expr -> Expr
 recoverListID (Var idList) index = (ListElem idList index)
 recoverListID (ListExpr list) index = (ListElemDirect list index)
 
-recoverAsgn :: Expr -> Stmt ->  Map.Map String (Stmt, [String], [Expr]) -> Map.Map String Expr -> MonadValue -> (MonadValue, Map.Map String (Stmt, [String], [Expr]), Map.Map String Expr)
-recoverAsgn (CallExpr name params) (Assign id expr) fBody fCntx list =
-        let base = (getFuncBody name fBody)
-            baseStmt = fst3 base
-            fInput = snd3 base
-            fOutput = trd3 base
-            baseUpdated = updateStmtUses name baseStmt
-            outCntxStmt = addOutputCntx name fOutput id baseUpdated
-            inCntxStmt = addInputCntx name fInput params outCntxStmt
-         --in error ("Call is:\n" ++ (show inCntxStmt))
-         in translateExecKuifje inCntxStmt fBody fCntx list
-recoverAsgn _ (Assign id expr) fBody fCntx list =
+recoverAsgn :: Expr -> Stmt -> Map.Map String Expr -> MonadValue -> (MonadValue, Map.Map String Expr)
+recoverAsgn _ (Assign id expr) fCntx list =
         let newFCntx = Map.insert id expr fCntx
             monadList = concatMonadValues list (A id expr)
-         in (monadList, fBody, newFCntx)
+         in (monadList, newFCntx)
 
-translateExecKuifje :: Stmt -> Map.Map String (Stmt, [String], [Expr]) -> Map.Map String Expr -> MonadValue -> (MonadValue, Map.Map String (Stmt, [String], [Expr]), Map.Map String Expr)
+translateExecKuifje :: Stmt -> Map.Map String Expr -> MonadValue -> (MonadValue, Map.Map String Expr)
 -- Sequence Statements
-translateExecKuifje (Seq []) fBody fCntx list = (list, fBody, fCntx)
-translateExecKuifje (Seq ls) fBody fCntx list = 
-        let (hdRes, hdFBody, hdFCntx) = (translateExecKuifje (head ls) fBody fCntx list)
-            (tlRes, tlFBody, tlFCntx) = (translateExecKuifje (Seq (tail ls)) hdFBody hdFCntx hdRes)
-         in (translateExecKuifje (Seq (tail ls)) hdFBody hdFCntx hdRes)
+translateExecKuifje (Seq []) fCntx list = (list, fCntx)
+translateExecKuifje (Seq ls) fCntx list = 
+        let (hdRes, hdFCntx) = (translateExecKuifje (head ls) fCntx list)
+            (tlRes, tlFCntx) = (translateExecKuifje (Seq (tail ls)) hdFCntx hdRes)
+         in (translateExecKuifje (Seq (tail ls)) hdFCntx hdRes)
 -- Assign Statements
-translateExecKuifje (Assign id expr) fBody fCntx list = recoverAsgn expr (Assign id expr) fBody fCntx list
+translateExecKuifje (Assign id expr) fCntx list = recoverAsgn expr (Assign id expr) fCntx list
 --translateExecKuifje (Assign id expr) fBody fCntx list = 
 --        let newFCntx = Map.insert id expr fCntx
 --            monadList = concatMonadValues list (A id expr)
 --         in (monadList, fBody, newFCntx)
 -- Support Statements
-translateExecKuifje (Plusplus id) fBody fCntx list = 
+translateExecKuifje (Plusplus id) fCntx list = 
         let var = (Var id)
             one = (RationalConst 1)
             expr = (ABinary Add var one)
-         in recoverAsgn expr (Assign id expr) fBody fCntx list
-translateExecKuifje (Lessless id) fBody fCntx list = 
+         in recoverAsgn expr (Assign id expr) fCntx list
+translateExecKuifje (Lessless id) fCntx list = 
         let var = (Var id)
             one = (RationalConst 1)
             expr = (ABinary Subtract var one)
-         in recoverAsgn expr (Assign id expr) fBody fCntx list
-translateExecKuifje (Support id (Var idexp)) fBody fCntx list = 
-        let gammaL = createMonnad list
-            kuifje = hysem gammaL (uniform [E.empty])
-            executed = exec idexp kuifje
-            support = getSupportFromHyper executed
-            dist = recoverSupportAsDistList support
-         in if ((length dist) == 1)
-            then let setExpr = valueToExpr (snd (convertTuple (head dist)))
-                     (newRes, newFBody, newFCntx) = translateExecKuifje (Assign id setExpr) fBody fCntx list
-                  in (newRes, newFBody, newFCntx)
-            else let setExpr = (INUchoices dist)
-                     (newRes, newFBody, newFCntx) = translateExecKuifje (Assign id setExpr) fBody fCntx list
-                  in (newRes, newFBody, newFCntx)
-translateExecKuifje (Support id exp) fBody fCntx list =
-        let distName = "DIST." ++ id
-            (newRes, newFBody, newFCntx) = translateExecKuifje (Assign distName exp) fBody fCntx list
-         in translateExecKuifje (Support id (Var distName)) newFBody newFCntx newRes
--- Function Statements
-translateExecKuifje (FuncStmt name body lInput) fBody fCntx list =
-        let (Seq insts) = body
-            lOutput = findReturns insts
-            nMap = Map.insert name (body, lInput, lOutput) fBody
-            stmt = fst3 (translateExecKuifje (Kuifje.Syntax.Skip) fBody fCntx list)
-            monadList = concatMonadValues list stmt
-         in (monadList, nMap, fCntx)
--- Return Statements
---   Returns were processed by FuncStmt, and should be skiped at this point:
-translateExecKuifje (ReturnStmt outputs) fBody fCntx list = (list, fBody, fCntx)
-translateExecKuifje (Kuifje.Syntax.If e s1 s2) fBody fCntx list =
-        let listTrue = (fst3 (translateExecKuifje s1 fBody fCntx (L [])))
-            listFalse = (fst3 (translateExecKuifje s2 fBody fCntx (L [])))
-            (newRes, newFBody, newFCntx) = ((C e listTrue listFalse), fBody, fCntx)
-            monadList = concatMonadValues list newRes
-         in (monadList, newFBody, newFCntx)
+         in recoverAsgn expr (Assign id expr) fCntx list
 -- While Statements
-translateExecKuifje (Kuifje.Syntax.While e body) fBody fCntx list =
+translateExecKuifje (Kuifje.Syntax.While e body) fCntx list =
         -- If a variable controls a loop, it is leaked to the adversary:
-        let (lBody, newFBody, newFCntx) = translateExecKuifje body fBody fCntx (O e)
+        let (lBody, newFCntx) = translateExecKuifje body fCntx (O e)
             monadList = concatMonadValues list (W e lBody)
-         in (monadList, newFBody, newFCntx)
+         in (monadList, newFCntx)
 -- For Statements
 --translateExecKuifje (For index (Var idList) body) fBody fCntx list = 
-translateExecKuifje (For index ls body) fBody fCntx list =
+translateExecKuifje (For index ls body) fCntx list =
         let iteratorID = "iterator." ++ index
             listLen = recoverListLength ls--(ListLength (Var idList))
 
@@ -153,36 +112,36 @@ translateExecKuifje (For index ls body) fBody fCntx list =
             --element = (ListElem idList (Var iteratorID))
             element = recoverListID ls (Var iteratorID)
             toAppend = [(A index element)] ++ [(A iteratorID postCond)]
-            (lBody, newFBody, newFCntx) = translateExecKuifje body fBody fCntx (L toAppend)
+            (lBody, newFCntx) = translateExecKuifje body fCntx (L toAppend)
             monadList = concatMonadValues preCond (W cond lBody)
-         in (monadList, newFBody, newFCntx)
+         in (monadList, newFCntx)
 -- Skip Statements
-translateExecKuifje Kuifje.Syntax.Skip fBody fCntx list = ((concatMonadValues list (M skip)), fBody, fCntx)
+translateExecKuifje Kuifje.Syntax.Skip fCntx list = ((concatMonadValues list (M skip)), fCntx)
 -- Leak Statements
-translateExecKuifje (Leak e) fBody fCntx list = ((concatMonadValues list (O e)), fBody, fCntx)
+translateExecKuifje (Leak e) fCntx list = ((concatMonadValues list (O e)), fCntx)
 -- Vis Statements
-translateExecKuifje (Vis s) fBody fCntx list = ((concatMonadValues list (M undefined)), fBody, fCntx)
+translateExecKuifje (Vis s) fCntx list = ((concatMonadValues list (M undefined)), fCntx)
 -- External Choice Statements
-translateExecKuifje (Echoice s1 s2 p) fBody fCntx list = 
-        let listTrue = (fst3 (translateExecKuifje s1 fBody fCntx (L [])))
-            listFalse = (fst3 (translateExecKuifje s2 fBody fCntx (L [])))
-            (newRes, newFBody, newFCntx) = ((E listTrue listFalse p), fBody, fCntx)
+translateExecKuifje (Echoice s1 s2 p) fCntx list = 
+        let listTrue = (fst2 (translateExecKuifje s1 fCntx (L [])))
+            listFalse = (fst2 (translateExecKuifje s2 fCntx (L [])))
+            (newRes, newFCntx) = ((E listTrue listFalse p), fCntx)
             monadList = concatMonadValues list newRes
-         in (monadList, newFBody, newFCntx)
+         in (monadList, newFCntx)
 -- Sampling Statements
-translateExecKuifje (Sampling id (Var idexp)) fBody fCntx list =
+translateExecKuifje (Sampling id (Var idexp)) fCntx list =
         let exprD = getCntxExpr idexp fCntx
             expr = sampleFromDist exprD
             newFCntx = Map.insert id expr fCntx
             monadList = concatMonadValues list (A id expr)
-         in (monadList, fBody, newFCntx)
-translateExecKuifje (Sampling id exprD) fBody fCntx list =
+         in (monadList, newFCntx)
+translateExecKuifje (Sampling id exprD) fCntx list =
         let expr = sampleFromDist exprD
             newFCntx = Map.insert id expr fCntx
             monadList = concatMonadValues list (A id expr)
-         in (monadList, fBody, newFCntx)
+         in (monadList, newFCntx)
 -- Default Value - Case a Statement is not found
-translateExecKuifje stmt _ _ list = error ("Invalid Statement:\n" ++ (show stmt) ++ "\nList:\n" ++ (monadType list))
+translateExecKuifje stmt _ list = error ("Invalid Statement:\n" ++ (show stmt) ++ "\nList:\n" ++ (monadType list))
 
 project :: Dist (Dist Gamma) -> Dist (Dist Rational)
 project = fmap (fmap (\s -> getRational s "y"))
@@ -192,7 +151,7 @@ initGamma x y = let g = E.add E.empty ("x", (R x)) in
                E.add g ("y", (R y))
 
 hyper :: Dist (Dist Rational)
-hyper = let g = createMonnad (fst3 (translateExecKuifje exampelS Map.empty Map.empty (L [])))
+hyper = let g = createMonnad (fst2 (translateExecKuifje exampelS Map.empty (L [])))
          in project $ hysem g (uniform [E.empty])
 
 example :: String

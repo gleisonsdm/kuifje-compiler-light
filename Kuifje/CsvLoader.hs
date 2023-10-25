@@ -197,9 +197,6 @@ loadCSVs fName (Seq ls) m = do putStr ""
                                (newHd,m1) <- (loadCSVs fName hd m)
                                (newTl,m2) <- (loadCSVs fName (Seq tl) m1)
                                Prelude.return ((concatStmts newHd newTl),m2)
-loadCSVs fName (FuncStmt name body lInput) m = do putStr ""
-                                                  (newBody, m1) <- (loadCSVs fName body m)
-                                                  Prelude.return ((FuncStmt name newBody lInput),m1)
 loadCSVs fName (Kuifje.Syntax.If e s1 s2) m = do putStr ""
                                                  (newS1,_) <- (loadCSVs fName s1 m)
                                                  (newS2,_) <- (loadCSVs fName s2 m)

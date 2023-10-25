@@ -77,9 +77,8 @@ compileFile filename param =
   do
     file <- parseFile filename
     let map1 = Map.empty
-    let map2 = Map.empty
     st <- readCSVs filename file
-    let ast =  fst3 (translateExecKuifje st map1 map2 (L []))
+    let ast =  fst2 (translateExecKuifje st map1 (L []))
     return ast
 
 runFile :: String -> [String] -> Dist Gamma -> IO (Hyper Gamma)
